@@ -70,7 +70,7 @@ class SchemaDocs:
         return "\n".join(f"- {n}" for n in self.notes)
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=4)
 def load_schema(path=str(SCHEMA_DOCS_PATH)):
     with open(path, encoding="utf-8") as handle:
         return SchemaDocs(yaml.safe_load(handle))

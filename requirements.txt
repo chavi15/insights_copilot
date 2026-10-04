@@ -3,6 +3,7 @@ sqlglot>=25.0
 chromadb>=0.5
 streamlit>=1.38
 pandas>=2.0
+openpyxl>=3.1
 numpy>=1.26
 PyYAML>=6.0
 python-dotenv>=1.0

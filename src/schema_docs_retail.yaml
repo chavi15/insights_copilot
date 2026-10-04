@@ -1,0 +1,45 @@
+dialect_notes:
+  - Real transactions of a UK online gift retailer from 2010-12-01 to 2011-12-09. Many customers are wholesalers.
+  - Revenue is invoice_lines.line_total (quantity times unit_price) in pounds sterling. Net revenue is SUM(line_total) over all lines, which subtracts cancellations because their line_total is negative.
+  - Cancelled invoices have invoices.is_cancelled = true, an invoice_no starting with C, and negative quantity and line_total. For sales, units sold or purchases, filter to is_cancelled = false.
+  - customer_id can be NULL on invoices (about 1,600 guest or unrecorded invoices). COUNT(DISTINCT customer_id) ignores them; say so when counting customers.
+  - invoices.country is the country of that invoice. dim_customer.country is each customer's most frequent country. Use invoices.country for revenue by country.
+  - Some stock codes are charges, not merchandise, for example POST, DOT and C2 (postage), M (manual), BANK CHARGES, AMAZONFEE and CRUK.
+  - The same stock_code can appear on more than one line of an invoice, so invoice_lines has no unique key.
+  - Use EXTRACT(year FROM invoice_date), EXTRACT(month FROM invoice_date) or date_trunc('month', invoice_date) for time filters. December 2011 has only nine days of data.
+  - Country names are as recorded, for example EIRE for Ireland, RSA for South Africa, and Unspecified.
+tables:
+  dim_customer:
+    description: One row per known customer with the country they most often bought from.
+    keywords: [customer, customers, client, clients, buyer, buyers, shopper, account, wholesaler, country, countries]
+    columns:
+      customer_id: {type: integer, description: Primary key of the customer}
+      country: {type: text, description: Most frequent country of the customer's invoices, such as United Kingdom or Germany}
+  dim_product:
+    description: One row per stock code (product or charge) with its most common description.
+    keywords: [product, products, item, items, stock, code, sku, description, gift, merchandise, article]
+    columns:
+      stock_code: {type: text, description: Primary key, the upper-case stock code such as 85123A}
+      description: {type: text, description: Most frequent product description for the stock code}
+  invoices:
+    description: One row per invoice (order or cancellation) with its date, customer, country and cancellation flag.
+    keywords: [invoice, invoices, order, orders, purchase, purchases, transaction, transactions, basket, date, month, year, day, cancelled, cancellation, cancellations, return, returns, country]
+    columns:
+      invoice_no: {type: text, description: Primary key; starts with C for cancellations}
+      invoice_date: {type: timestamp, description: Date and time of the invoice}
+      customer_id: {type: integer, description: Customer who placed it, foreign key to dim_customer; can be NULL}
+      country: {type: text, description: Country of the customer for this invoice}
+      is_cancelled: {type: boolean, description: True when the invoice is a cancellation}
+  invoice_lines:
+    description: One row per product line on an invoice, with quantity, unit price and line total. The largest table.
+    keywords: [line, lines, sales, sale, sold, revenue, turnover, spend, spent, amount, value, quantity, units, unit, price, prices, total]
+    columns:
+      invoice_no: {type: text, description: Invoice the line belongs to, foreign key to invoices}
+      stock_code: {type: text, description: Product on the line, foreign key to dim_product}
+      quantity: {type: integer, description: Units on the line; negative on cancellations}
+      unit_price: {type: numeric, description: Price per unit in pounds sterling; always above zero}
+      line_total: {type: numeric, description: quantity times unit_price, rounded to 2 decimals; this is revenue}
+joins:
+  - [invoice_lines, invoices, invoice_no]
+  - [invoice_lines, dim_product, stock_code]
+  - [invoices, dim_customer, customer_id]

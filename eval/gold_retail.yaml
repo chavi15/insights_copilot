@@ -1,0 +1,89 @@
+- id: re01
+  difficulty: easy
+  question: How many known customers are there?
+  sql: SELECT COUNT(*) AS customer_count FROM dim_customer
+- id: re02
+  difficulty: easy
+  question: How many invoices were cancelled?
+  sql: SELECT COUNT(*) AS cancelled_invoices FROM invoices WHERE is_cancelled
+- id: re03
+  difficulty: easy
+  question: Which 5 countries have the most customers, and how many customers does each have?
+  sql: |-
+    SELECT country, COUNT(*) AS customer_count
+    FROM dim_customer
+    GROUP BY country
+    ORDER BY customer_count DESC, country
+    LIMIT 5
+- id: re04
+  difficulty: easy
+  question: What is the total net revenue across all invoice lines, after cancellations?
+  sql: SELECT ROUND(SUM(line_total), 2) AS net_revenue FROM invoice_lines
+- id: rm01
+  difficulty: medium
+  question: Which 5 invoice countries had the highest net revenue, and how much?
+  sql: |-
+    SELECT i.country, ROUND(SUM(l.line_total), 2) AS net_revenue
+    FROM invoice_lines l
+    JOIN invoices i ON l.invoice_no = i.invoice_no
+    GROUP BY i.country
+    ORDER BY net_revenue DESC, i.country
+    LIMIT 5
+- id: rm02
+  difficulty: medium
+  question: Which 5 products have the highest net units sold after subtracting cancelled units? Show stock code, description and net units.
+  sql: |-
+    SELECT p.stock_code, p.description, SUM(l.quantity) AS net_units
+    FROM invoice_lines l
+    JOIN dim_product p ON l.stock_code = p.stock_code
+    GROUP BY p.stock_code, p.description
+    ORDER BY net_units DESC, p.stock_code
+    LIMIT 5
+- id: rm03
+  difficulty: medium
+  question: What was the net revenue in each month of 2011?
+  sql: |-
+    SELECT EXTRACT(month FROM i.invoice_date) AS month, ROUND(SUM(l.line_total), 2) AS net_revenue
+    FROM invoice_lines l
+    JOIN invoices i ON l.invoice_no = i.invoice_no
+    WHERE EXTRACT(year FROM i.invoice_date) = 2011
+    GROUP BY month
+    ORDER BY month
+- id: rm04
+  difficulty: medium
+  question: Who are the top 5 customers by net revenue, with their country?
+  sql: |-
+    SELECT c.customer_id, c.country, ROUND(SUM(l.line_total), 2) AS net_revenue
+    FROM invoice_lines l
+    JOIN invoices i ON l.invoice_no = i.invoice_no
+    JOIN dim_customer c ON i.customer_id = c.customer_id
+    GROUP BY c.customer_id, c.country
+    ORDER BY net_revenue DESC, c.customer_id
+    LIMIT 5
+- id: rh01
+  difficulty: hard
+  question: For each month of 2011, how many customers made their first non-cancelled purchase in that month?
+  sql: |-
+    WITH first_purchase AS (
+      SELECT customer_id, MIN(invoice_date) AS first_date
+      FROM invoices
+      WHERE NOT is_cancelled AND customer_id IS NOT NULL
+      GROUP BY customer_id
+    )
+    SELECT EXTRACT(month FROM first_date) AS month, COUNT(*) AS new_customers
+    FROM first_purchase
+    WHERE EXTRACT(year FROM first_date) = 2011
+    GROUP BY month
+    ORDER BY month
+- id: rh02
+  difficulty: hard
+  question: What percentage of customers with at least one non-cancelled invoice placed more than one non-cancelled invoice?
+  sql: |-
+    WITH per_customer AS (
+      SELECT customer_id, COUNT(*) AS invoice_count
+      FROM invoices
+      WHERE NOT is_cancelled AND customer_id IS NOT NULL
+      GROUP BY customer_id
+    )
+    SELECT ROUND(100.0 * SUM(CASE WHEN invoice_count > 1 THEN 1 ELSE 0 END) / COUNT(*), 2) AS repeat_customer_pct
+    FROM per_customer

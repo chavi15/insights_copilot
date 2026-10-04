@@ -7,3 +7,5 @@ __pycache__/
 logs/*.jsonl
 data/*.duckdb
 data/*.sqlite
+data/raw/
+data/retail.duckdb

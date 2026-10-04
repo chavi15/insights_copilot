@@ -91,7 +91,7 @@ def classify_failure(status, error, generated_sql, gold_sql):
     return "other"
 
 
-def run_evaluation(gold, llm, retriever, variants, db_path, validator=None, log_path=None, progress=None):
+def run_evaluation(gold, llm, retriever, variants, db_path, validator=None, log_path=None, progress=None, dataset=None):
     gold_frames = {}
     for item in gold:
         outcome = run_query(item["sql"], db_path)
@@ -102,7 +102,8 @@ def run_evaluation(gold, llm, retriever, variants, db_path, validator=None, log_
     for variant in variants:
         for index, item in enumerate(gold, 1):
             answer = answer_question(
-                item["question"], variant, llm, retriever, db_path=db_path, log_path=log_path, validator=validator
+                item["question"], variant, llm, retriever, db_path=db_path, log_path=log_path, validator=validator,
+                dataset=dataset,
             )
             frame = answer.result.frame if answer.result and answer.result.ok else None
             correct = answer.status == "ok" and results_match(frame, gold_frames[item["id"]])
@@ -170,7 +171,7 @@ def write_report(records, md_path, csv_path, meta):
     summary = summarize(records)
     breakdown = failure_breakdown(records).reset_index()
     lines = [
-        "# Evaluation report",
+        f"# Evaluation report{meta.get('title_suffix', '')}",
         "",
         f"Generated {meta['generated']} with model `{meta['model']}` on {meta['questions']} gold questions "
         f"({meta['easy']} easy, {meta['medium']} medium, {meta['hard']} hard).",

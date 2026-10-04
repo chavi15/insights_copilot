@@ -70,19 +70,19 @@ class KeywordRetriever:
 class ChromaRetriever:
     name = "chroma"
 
-    def __init__(self, schema=None, path=CHROMA_DIR):
+    def __init__(self, schema=None, path=CHROMA_DIR, collection_name="schema_tables"):
         import chromadb
 
         self.schema = schema or load_schema()
         client = chromadb.PersistentClient(path=str(path))
         documents = [self.schema.table_document(n) for n in self.schema.table_names]
-        collection = client.get_or_create_collection("schema_tables", metadata={"hnsw:space": "cosine"})
+        collection = client.get_or_create_collection(collection_name, metadata={"hnsw:space": "cosine"})
         stored = collection.get()
         if sorted(stored["ids"]) != sorted(self.schema.table_names) or stored["documents"] != [
             documents[self.schema.table_names.index(i)] for i in stored["ids"]
         ]:
-            client.delete_collection("schema_tables")
-            collection = client.get_or_create_collection("schema_tables", metadata={"hnsw:space": "cosine"})
+            client.delete_collection(collection_name)
+            collection = client.get_or_create_collection(collection_name, metadata={"hnsw:space": "cosine"})
             collection.add(ids=self.schema.table_names, documents=documents)
         self.collection = collection
 
@@ -106,12 +106,14 @@ class TableRetriever:
         return self.schema.render(self.tables_for(question))
 
 
-def get_retriever(kind=None, k=3):
+def get_retriever(kind=None, k=3, dataset=None):
     kind = (kind or os.getenv("RETRIEVER") or "chroma").lower()
-    schema = load_schema()
+    schema = dataset.schema() if dataset is not None else load_schema()
+    # Each dataset gets its own Chroma collection so tables are never retrieved across datasets.
+    collection = "schema_tables" if dataset is None or dataset.key == "pharma" else f"schema_tables_{dataset.key}"
     if kind == "chroma":
         try:
-            return TableRetriever(ChromaRetriever(schema), schema, k)
+            return TableRetriever(ChromaRetriever(schema, collection_name=collection), schema, k)
         except Exception as error:
             print(f"[retrieval] ChromaDB unavailable ({type(error).__name__}); using keyword retriever instead.")
     return TableRetriever(KeywordRetriever(schema), schema, k)

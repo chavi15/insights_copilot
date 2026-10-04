@@ -21,30 +21,22 @@ load_streamlit_secrets()
 from src.charts import chart_spec
 from src.config import DB_PATH, FEEDBACK_PATH
 from src.data_gen import build_frames, write_db
+from src.datasets import DATASETS, PHARMA
 from src.executor import append_jsonl
 from src.llm import LLMError, build_llm
 from src.nl2sql import VARIANTS
 from src.pipeline import answer_question
 from src.retrieval import get_retriever
-from src.schema import load_schema
+from src.retail_load import build as build_retail_db
 from src.schema_assistant import DIALECTS, MAX_SCHEMA_CHARS, MAX_SCHEMAS, PRIVACY_WARNING, build_schema_llm, write_sql
 from src.sql_optimizer import MAX_PLAN_CHARS, MAX_QUERY_CHARS, OPTIMIZER_WARNING, SUGGESTIONS_LABEL, analyze, suggest
 
-SAMPLE_QUESTIONS = [
-    "What was the total revenue for each product in 2025?",
-    "What is the total revenue for each region?",
-    "Which 5 territories had the highest total revenue?",
-    "Show total revenue by month together with the change from the previous month.",
-    "Which territories missed their total target revenue in Q4 2025? Show actual revenue and target.",
-    "What are the top 3 territories by total revenue within each region?",
-    "What percentage of total revenue does each region contribute?",
-    "How many calls were made to HCPs in each tier?",
-]
 DEMO_MODE = os.getenv("DEMO_MODE", "").lower() in ("1", "true", "yes")
 MAX_LIVE_CALLS = int(os.getenv("MAX_LIVE_CALLS", "10" if DEMO_MODE else "1000"))
 
 PASTELS = ["#CDB8FF", "#BFDBFE", "#C7F5E6"]
 BADGES = ["Read-only DuckDB", "SQL guardrails", "Synthetic data"]
+RETAIL_BADGES = ["Read-only DuckDB", "SQL guardrails", "Real data"]
 PIPELINE_STEPS = ["Question", "Schema retrieval", "LLM", "Guardrails", "Read-only execution", "Result"]
 MODES = ("Warehouse demo", "Schema-only assistant")
 QUOTA_MESSAGE = "Free-tier limit reached. Try a sample question, which may be cached."
@@ -159,7 +151,7 @@ __SAMPLE_RULES__
 
 def sample_button_rules():
     return "\n".join(
-        f".st-key-sample_{i} button {{ background: {PASTELS[i % len(PASTELS)]}; }}" for i in range(len(SAMPLE_QUESTIONS))
+        f".st-key-sample_{i} button {{ background: {PASTELS[i % len(PASTELS)]}; }}" for i in range(max(len(d.sample_questions) for d in DATASETS.values()))
     )
 
 
@@ -167,13 +159,17 @@ def inject_css():
     st.markdown(CSS.replace("__SAMPLE_RULES__", sample_button_rules()), unsafe_allow_html=True)
 
 
-def render_header():
-    badges = "".join(f'<span class="cic-badge">{label}</span>' for label in BADGES)
+def render_header(dataset=PHARMA):
+    if dataset.key == "retail":
+        labels, where = RETAIL_BADGES, "on real transactions from a UK online retailer (December 2010 to December 2011)"
+    else:
+        labels, where = BADGES, "on a synthetic pharma sales warehouse"
+    badges = "".join(f'<span class="cic-badge">{label}</span>' for label in labels)
     st.markdown(
         f"""<div class="cic-header">
 <h1 class="cic-title">Commercial Insights Copilot</h1>
 <p class="cic-sub">Ask a business question in English. A language model writes the SQL, safety checks validate it,
-and it runs read-only on a synthetic pharma sales warehouse.</p>
+and it runs read-only {where}.</p>
 {badges}
 </div>""",
         unsafe_allow_html=True,
@@ -198,14 +194,27 @@ def ensure_database():
     return str(DB_PATH)
 
 
+@st.cache_resource(show_spinner="Downloading and preparing the Online Retail data. This takes about a minute...")
+def ensure_retail_database():
+    dataset = DATASETS["retail"]
+    if not Path(dataset.db_path).exists():
+        build_retail_db(db_path=dataset.db_path)
+    return str(dataset.db_path)
+
+
 @st.cache_resource(show_spinner="Starting the Gemini client...")
 def get_schema_llm():
     return build_schema_llm()
 
 
-@st.cache_resource(show_spinner="Starting the language model and retriever...")
-def get_services():
-    return build_llm(), get_retriever()
+@st.cache_resource(show_spinner="Starting the language model...")
+def get_llm():
+    return build_llm()
+
+
+@st.cache_resource(show_spinner="Starting the schema retriever...")
+def get_dataset_retriever(dataset_key):
+    return get_retriever(dataset=DATASETS[dataset_key])
 
 
 def is_quota_error(text):
@@ -213,9 +222,9 @@ def is_quota_error(text):
     return "resource_exhausted" in lowered or "exceeded your current quota" in lowered
 
 
-def tables_used(question, variant, retriever):
+def tables_used(question, variant, retriever, dataset):
     if variant != "retrieval_few_shot":
-        return load_schema().table_names
+        return dataset.schema().table_names
     try:
         return retriever.tables_for(question)
     except Exception:
@@ -423,33 +432,52 @@ def run_schema_mode():
 
 
 inject_css()
-render_header()
-if DEMO_MODE:
-    st.info(f"Demo mode: live model calls are limited to {MAX_LIVE_CALLS} per session. Answers to repeated questions are cached.")
 
 with st.sidebar:
     mode = st.radio("Mode", MODES, key="mode")
+    if mode != "Schema-only assistant":
+        dataset_key = st.radio(
+            "Dataset", list(DATASETS), format_func=lambda key: DATASETS[key].label, key="dataset"
+        )
 
 if mode == "Schema-only assistant":
+    render_header()
+    if DEMO_MODE:
+        st.info(f"Demo mode: live model calls are limited to {MAX_LIVE_CALLS} per session. Answers to repeated questions are cached.")
     run_schema_mode()
     st.stop()
 
-db_path = ensure_database()
+dataset = DATASETS[dataset_key]
+render_header(dataset)
+if dataset.source:
+    st.caption(dataset.source)
+if DEMO_MODE:
+    st.info(f"Demo mode: live model calls are limited to {MAX_LIVE_CALLS} per session. Answers to repeated questions are cached.")
+
 try:
-    llm, retriever = get_services()
+    db_path = ensure_database() if dataset.key == "pharma" else ensure_retail_database()
+except Exception as error:
+    st.error(
+        f"The {dataset.label} database could not be prepared ({type(error).__name__}). "
+        "Run python -m src.retail_load locally, or check the internet connection."
+    )
+    st.stop()
+try:
+    llm = get_llm()
+    retriever = get_dataset_retriever(dataset.key)
 except LLMError as error:
     st.error(str(error))
     st.stop()
 
 with st.sidebar:
     st.header("Sample questions")
-    for index, sample in enumerate(SAMPLE_QUESTIONS):
+    for index, sample in enumerate(dataset.sample_questions):
         if st.button(sample, key=f"sample_{index}"):
             st.session_state["question"] = sample
     st.divider()
     variant = st.selectbox("Prompting strategy", VARIANTS, index=VARIANTS.index("retrieval_few_shot"))
     with st.expander("Tables available"):
-        schema = load_schema()
+        schema = dataset.schema()
         for name in schema.table_names:
             st.markdown(f"**{name}** - {schema.tables[name]['description']}")
 
@@ -462,10 +490,11 @@ if st.button("Ask", type="primary", key="ask") and question.strip():
     else:
         before = getattr(llm, "misses", 0)
         with st.spinner("Thinking..."):
-            st.session_state["last"] = answer_question(question.strip(), variant, llm, retriever, db_path=db_path)
-            st.session_state["last_tables"] = tables_used(question.strip(), variant, retriever)
+            answer = answer_question(question.strip(), variant, llm, retriever, db_path=db_path, dataset=dataset)
+            st.session_state["last"] = (dataset.key, answer, tables_used(question.strip(), variant, retriever, dataset))
         if getattr(llm, "misses", 0) > before:
             st.session_state["live_calls"] = live_calls + 1
 
-if st.session_state.get("last"):
-    render(st.session_state["last"], st.session_state.get("last_tables", []))
+last = st.session_state.get("last")
+if last and last[0] == dataset.key:
+    render(last[1], last[2])

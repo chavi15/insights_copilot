@@ -39,6 +39,7 @@ For Gemini instead, set `GEMINI_API_KEY` and `LLM_MODEL` (for example `gemini-3.
 
 ```bash
 python -m src.data_gen
+python -m src.retail_load
 pytest
 python eval/run_eval.py --limit 6
 python eval/run_eval.py
@@ -64,6 +65,30 @@ Pick **Schema-only assistant** in the sidebar to work with your own database wit
 
 - *Check with rules* runs locally with sqlglot and makes no model call. It flags `SELECT *`, functions on columns in `WHERE`, leading-wildcard `LIKE`, joins without a condition, `NOT IN` with a subquery, correlated subqueries (not `EXISTS`), `DISTINCT` with joins, `ORDER BY` in a subquery without `LIMIT`/`FETCH` (Oracle `ROWNUM` top-N is allowed), and visible implicit conversions (a column compared with a quoted number or a date-like string). Each finding has a severity, a reason and a suggested rewrite.
 - *Ask Gemini for suggestions* sends the query with string literals replaced by `?` and comments removed, the table and column names from the schema boxes, and the plan text with quoted values replaced by `?`. The output is labelled "Unverified suggestions: compare plans on your own database before using."
+
+## Real data: Online Retail
+
+The sidebar **Dataset** selector switches between the synthetic pharma warehouse and a real dataset. Each dataset has its own DuckDB file, schema docs, few-shot examples, retriever collection and guardrail table allowlist, so a question asked on one can never read the other's tables.
+
+**Source and licence.** UCI Machine Learning Repository, Online Retail dataset, CC BY 4.0. Chen, D. (2015). Online Retail [Dataset]. UCI Machine Learning Repository. https://doi.org/10.24432/C5BW33. These are the real transactions of a UK online gift retailer from 1 December 2010 to 9 December 2011.
+
+```bash
+python -m src.retail_load                                   # downloads into data/raw/ if needed, builds data/retail.duckdb
+python eval/run_eval.py --dataset retail --variants few_shot_full_schema   # 10 model calls
+```
+
+The loader needs `openpyxl` to read the `.xlsx` file and takes about 30 seconds. It prints the row count of the raw file and of each table, plus the number of rows removed or flagged by each cleaning step. The app builds the database itself the first time Online Retail is selected. Neither the raw file nor `data/retail.duckdb` is committed.
+
+- **Schema:** `dim_customer`, `dim_product`, `invoices` and `invoice_lines`, described in `src/schema_docs_retail.yaml`.
+- **Cleaning:** each decision and its row count is in `docs/RETAIL_DATA_NOTES.md`. In short: exact duplicates, bad-debt adjustments and lines with a zero or negative price are removed. Cancellations are kept, with `is_cancelled = true` and negative quantities. Lines with no customer are kept, with `customer_id` NULL.
+- **Gold set:** `eval/gold_retail.yaml` has 10 questions (4 easy, 4 medium, 2 hard). Every reference answer was checked against an independent pandas computation from the raw file (`tests/retail_reference.py`), and `tests/test_retail.py` repeats that check whenever the raw file is present.
+- **Results:** retail evaluation results go to `eval/REPORT_retail.md` and `eval/results_retail.csv`, separate from the pharma report.
+
+**Limits.**
+- Ten questions are far too few to estimate accuracy. One wrong answer moves the score by 10 points, so treat a retail run as a smoke test, not a benchmark.
+- The data comes from one retailer over one year, mostly UK gift wholesale, with English product names and a handful of countries. Results say nothing about other domains, schemas or databases.
+- The gold questions and cleaning rules were written by the same person who built the loader, so they share its assumptions, such as what counts as revenue.
+- No retail accuracy figures are included here. Do not quote any you have not measured.
 
 ## Data model
 

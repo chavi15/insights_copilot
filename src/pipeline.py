@@ -31,13 +31,21 @@ class Answer:
         return "ok"
 
 
-def answer_question(question, variant, llm, retriever=None, db_path=DB_PATH, log_path=LOG_PATH, validator: Callable | None = None):
+def answer_question(
+    question, variant, llm, retriever=None, db_path=DB_PATH, log_path=LOG_PATH, validator: Callable | None = None, dataset=None
+):
     start = time.perf_counter()
     validator = validator or guardrails.validate
     raw_sql, verdict, result, error = "", None, None, None
     try:
-        raw_sql = generate_sql(question, variant, llm, retriever)
-        verdict = validator(raw_sql, dialect=dialect_for(db_path))
+        if dataset is None:
+            raw_sql = generate_sql(question, variant, llm, retriever)
+            verdict = validator(raw_sql, dialect=dialect_for(db_path))
+        else:
+            raw_sql = generate_sql(
+                question, variant, llm, retriever, dataset.schema(), list(dataset.examples), dataset.domain
+            )
+            verdict = validator(raw_sql, dialect=dialect_for(db_path), allowed_tables=dataset.allowed_tables)
         if verdict.ok:
             result = run_query(verdict.sql, db_path)
     except Exception as exc:
@@ -48,6 +56,7 @@ def answer_question(question, variant, llm, retriever=None, db_path=DB_PATH, log
             log_path,
             {
                 "question": question,
+                "dataset": dataset.key if dataset is not None else "pharma",
                 "variant": variant,
                 "sql": raw_sql,
                 "status": answer.status,

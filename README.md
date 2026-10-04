@@ -90,6 +90,28 @@ The loader needs `openpyxl` to read the `.xlsx` file and takes about 30 seconds.
 - The gold questions and cleaning rules were written by the same person who built the loader, so they share its assumptions, such as what counts as revenue.
 - No retail accuracy figures are included here. Do not quote any you have not measured.
 
+## Real data: Pharmacy Sales
+
+The third dataset, **Pharmacy Sales (real, public)**, holds daily quantities sold by one pharmacy, from 2 January 2014 to 8 October 2019, in 8 ATC drug categories. It contains **quantities, not revenue**: there are no prices, customers or stores.
+
+**Source and licence.** Kaggle, "Pharma sales data" by Milan Zdravković (`milanzdravkovic/pharma-sales-data`), licensed **CC BY-NC 4.0**, which allows non-commercial use only. https://www.kaggle.com/datasets/milanzdravkovic/pharma-sales-data
+
+Download the dataset from Kaggle yourself, then:
+
+```bash
+cp ~/Downloads/archive/salesdaily.csv data/raw/salesdaily.csv   # only the daily file is used
+python -m src.pharmacy_load                                       # builds data/pharmacy.duckdb
+python eval/run_eval.py --dataset pharmacy --variants few_shot_full_schema --stop-on-quota --pace 7
+```
+
+- **Schema:** `fact_sales_daily(date, atc_code, quantity)` is melted from the wide ATC columns, plus `dim_atc(atc_code, description, therapeutic_group)` and `dim_date(date, year, month, quarter, weekday, is_weekend)`. It is described in `src/schema_docs_pharmacy.yaml`.
+- **Exact quantities:** `quantity` is stored as `DECIMAL(18,9)` because raw values have up to 9 decimals. Two yearly totals fall exactly on a rounding boundary (for example 13531.855), and floating-point sums rounded them differently depending on summation order.
+- **Kept as recorded:** 26 days have zero sales in every category, mostly public holidays, and are kept.
+- **Gold set:** `eval/gold_pharmacy.yaml` has 10 questions (4 easy, 4 medium, 2 hard). Every answer was checked against pandas computed directly on the raw wide CSV (`tests/pharmacy_reference.py`).
+- **Separation:** the dataset has its own database file, Chroma collection (`schema_tables_pharmacy`) and allowlist, built from its schema docs. Its `dim_date` shares a name with the synthetic pharma `dim_date`, but the two never meet, because each dataset only opens its own database file.
+- **Not committed:** the raw CSV and `data/pharmacy.duckdb` are git-ignored, so a deployed app cannot build this dataset unless the CSV is provided.
+- **Limits:** one pharmacy, 8 broad drug categories, quantities only, and 10 questions. Like the other gold sets, it is a smoke test, not an accuracy benchmark. No pharmacy accuracy figures are included.
+
 ## Data model
 
 Star schema: `dim_product`, `dim_territory`, `dim_hcp`, `dim_date`, `fact_sales`, `fact_calls`, `targets`. All data is synthetic and generated from a fixed seed, with seasonality, launch ramps for newer products, higher volume for top-tier doctors, and monthly targets set so that some territories miss target in some quarters.

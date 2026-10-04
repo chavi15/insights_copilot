@@ -21,6 +21,11 @@ def _is_rate_limit(error):
     return any(token in text for token in ("429", "rate", "overloaded", "quota", "resource_exhausted", "529", "503", "unavailable", "high demand", "502", "504"))
 
 
+def is_quota_error(error):
+    text = f"{type(error).__name__} {error}".lower()
+    return any(token in text for token in ("429", "quota", "resource_exhausted"))
+
+
 class AnthropicLLM:
     name = "anthropic"
 
@@ -121,8 +126,9 @@ class ScriptedLLM:
 
 
 class RetryingLLM:
-    def __init__(self, inner, attempts=6, base_delay=4.0, sleep=time.sleep):
+    def __init__(self, inner, attempts=6, base_delay=4.0, sleep=time.sleep, retry_quota=True):
         self.inner = inner
+        self.retry_quota = retry_quota
         self.attempts = attempts
         self.base_delay = base_delay
         self.sleep = sleep
@@ -137,6 +143,8 @@ class RetryingLLM:
                 raise  # our own errors, such as a truncated answer, are not worth retrying
             except Exception as error:
                 if attempt == self.attempts - 1 or not _is_rate_limit(error):
+                    raise
+                if not self.retry_quota and is_quota_error(error):
                     raise
                 self.sleep(min(60.0, self.base_delay * 2**attempt))
         raise LLMError("unreachable")
@@ -178,8 +186,8 @@ def detect_provider():
     raise LLMError("No API key found. Set ANTHROPIC_API_KEY or GEMINI_API_KEY in the .env file.")
 
 
-def build_llm(provider=None, cache=True):
+def build_llm(provider=None, cache=True, retry_quota=True):
     provider = provider or detect_provider()
     inner = AnthropicLLM() if provider == "anthropic" else GeminiLLM()
-    llm = RetryingLLM(inner)
+    llm = RetryingLLM(inner, retry_quota=retry_quota)
     return CachedLLM(llm) if cache else llm

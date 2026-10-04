@@ -27,6 +27,7 @@ from src.llm import LLMError, build_llm
 from src.nl2sql import VARIANTS
 from src.pipeline import answer_question
 from src.retrieval import get_retriever
+from src.pharmacy_load import build as build_pharmacy_db
 from src.retail_load import build as build_retail_db
 from src.schema_assistant import DIALECTS, MAX_SCHEMA_CHARS, MAX_SCHEMAS, PRIVACY_WARNING, build_schema_llm, write_sql
 from src.sql_optimizer import MAX_PLAN_CHARS, MAX_QUERY_CHARS, OPTIMIZER_WARNING, SUGGESTIONS_LABEL, analyze, suggest
@@ -162,6 +163,8 @@ def inject_css():
 def render_header(dataset=PHARMA):
     if dataset.key == "retail":
         labels, where = RETAIL_BADGES, "on real transactions from a UK online retailer (December 2010 to December 2011)"
+    elif dataset.key == "pharmacy":
+        labels, where = RETAIL_BADGES, "on real daily sales quantities from one pharmacy (2014 to 2019)"
     else:
         labels, where = BADGES, "on a synthetic pharma sales warehouse"
     badges = "".join(f'<span class="cic-badge">{label}</span>' for label in labels)
@@ -199,6 +202,14 @@ def ensure_retail_database():
     dataset = DATASETS["retail"]
     if not Path(dataset.db_path).exists():
         build_retail_db(db_path=dataset.db_path)
+    return str(dataset.db_path)
+
+
+@st.cache_resource(show_spinner="Preparing the pharmacy sales data...")
+def ensure_pharmacy_database():
+    dataset = DATASETS["pharmacy"]
+    if not Path(dataset.db_path).exists():
+        build_pharmacy_db(db_path=dataset.db_path)
     return str(dataset.db_path)
 
 
@@ -457,12 +468,14 @@ if DEMO_MODE:
     st.info(f"Demo mode: live model calls are limited to {MAX_LIVE_CALLS} per session. Answers to repeated questions are cached.")
 
 try:
-    db_path = ensure_database() if dataset.key == "pharma" else ensure_retail_database()
+    builders = {"pharma": ensure_database, "retail": ensure_retail_database, "pharmacy": ensure_pharmacy_database}
+    db_path = builders[dataset.key]()
 except Exception as error:
-    st.error(
-        f"The {dataset.label} database could not be prepared ({type(error).__name__}). "
-        "Run python -m src.retail_load locally, or check the internet connection."
-    )
+    hints = {
+        "retail": "Run python -m src.retail_load locally, or check the internet connection.",
+        "pharmacy": "Copy salesdaily.csv from the Kaggle dataset into data/raw/, then run python -m src.pharmacy_load.",
+    }
+    st.error(f"The {dataset.label} database could not be prepared ({type(error).__name__}). {hints.get(dataset.key, '')}")
     st.stop()
 try:
     llm = get_llm()

@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
+
 from src.config import DB_PATH, EVAL_DIR, GOLD_PATH, ROOT, SCHEMA_DOCS_PATH
 from src.examples import FEW_SHOT_EXAMPLES
 from src.guardrails import ALLOWED_TABLES
@@ -50,6 +52,60 @@ RETAIL_EXAMPLES = [
         ),
     },
 ]
+
+
+PHARMACY_EXAMPLES = [
+    {
+        "question": "What total quantity of anxiolytics (N05B) was sold in 2016?",
+        "sql": (
+            "SELECT ROUND(SUM(f.quantity), 2) AS total_quantity\n"
+            "FROM fact_sales_daily f\n"
+            "JOIN dim_date d ON f.date = d.date\n"
+            "WHERE f.atc_code = 'N05B' AND d.year = 2016"
+        ),
+    },
+    {
+        "question": "What is the average daily quantity sold in each therapeutic group?",
+        "sql": (
+            "WITH daily AS (\n"
+            "  SELECT f.date, a.therapeutic_group, SUM(f.quantity) AS day_quantity\n"
+            "  FROM fact_sales_daily f\n"
+            "  JOIN dim_atc a ON f.atc_code = a.atc_code\n"
+            "  GROUP BY f.date, a.therapeutic_group\n"
+            ")\n"
+            "SELECT therapeutic_group, ROUND(AVG(day_quantity), 2) AS avg_daily_quantity\n"
+            "FROM daily\n"
+            "GROUP BY therapeutic_group\n"
+            "ORDER BY therapeutic_group"
+        ),
+    },
+    {
+        "question": "For each quarter of 2017, which ATC category sold the lowest total quantity?",
+        "sql": (
+            "WITH totals AS (\n"
+            "  SELECT d.quarter, f.atc_code, SUM(f.quantity) AS total_quantity\n"
+            "  FROM fact_sales_daily f\n"
+            "  JOIN dim_date d ON f.date = d.date\n"
+            "  WHERE d.year = 2017\n"
+            "  GROUP BY d.quarter, f.atc_code\n"
+            "), ranked AS (\n"
+            "  SELECT quarter, atc_code, total_quantity,\n"
+            "         ROW_NUMBER() OVER (PARTITION BY quarter ORDER BY total_quantity, atc_code) AS rn\n"
+            "  FROM totals\n"
+            ")\n"
+            "SELECT quarter, atc_code, ROUND(total_quantity, 2) AS total_quantity\n"
+            "FROM ranked\n"
+            "WHERE rn = 1\n"
+            "ORDER BY quarter"
+        ),
+    },
+]
+
+
+def tables_in(schema_docs_path):
+    """The guardrail allowlist for a dataset is exactly the tables in its own schema docs."""
+    with open(schema_docs_path, encoding="utf-8") as handle:
+        return frozenset(yaml.safe_load(handle)["tables"])
 
 
 @dataclass(frozen=True)
@@ -116,4 +172,29 @@ RETAIL = Dataset(
     report_suffix="_retail",
 )
 
-DATASETS = {d.key: d for d in (PHARMA, RETAIL)}
+PHARMACY_DOCS = Path(ROOT / "src" / "schema_docs_pharmacy.yaml")
+PHARMACY = Dataset(
+    key="pharmacy",
+    label="Pharmacy Sales (real, public)",
+    domain="a single pharmacy's daily sales quantities by ATC drug category (real data, 2014 to 2019)",
+    db_path=Path(ROOT / "data" / "pharmacy.duckdb"),
+    schema_docs_path=PHARMACY_DOCS,
+    gold_path=Path(EVAL_DIR / "gold_pharmacy.yaml"),
+    examples=tuple(PHARMACY_EXAMPLES),
+    allowed_tables=tables_in(PHARMACY_DOCS),
+    sample_questions=(
+        "What was the total quantity sold in each therapeutic group per year?",
+        "Which weekday has the highest average total daily quantity?",
+        "How did monthly sales of antihistamines (R06) change during 2018?",
+        "Which ATC category sold the most in 2019?",
+        "Compare average daily quantity on weekends and weekdays for each ATC category.",
+    ),
+    source=(
+        "Source: Kaggle, Pharma sales data by Milan Zdravković (milanzdravkovic/pharma-sales-data), CC BY-NC 4.0 "
+        "(non-commercial). Quantities sold by one pharmacy, not revenue. "
+        "https://www.kaggle.com/datasets/milanzdravkovic/pharma-sales-data"
+    ),
+    report_suffix="_pharmacy",
+)
+
+DATASETS = {d.key: d for d in (PHARMA, RETAIL, PHARMACY)}

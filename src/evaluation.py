@@ -91,7 +91,18 @@ def classify_failure(status, error, generated_sql, gold_sql):
     return "other"
 
 
-def run_evaluation(gold, llm, retriever, variants, db_path, validator=None, log_path=None, progress=None, dataset=None):
+class EvaluationStopped(RuntimeError):
+    """Raised when stop_if fires; .records holds the rows finished so far, including the one that stopped it."""
+
+    def __init__(self, reason, records):
+        super().__init__(reason)
+        self.records = records
+
+
+def run_evaluation(
+    gold, llm, retriever, variants, db_path, validator=None, log_path=None, progress=None, dataset=None,
+    stop_if=None, pause=None,
+):
     gold_frames = {}
     for item in gold:
         outcome = run_query(item["sql"], db_path)
@@ -101,6 +112,8 @@ def run_evaluation(gold, llm, retriever, variants, db_path, validator=None, log_
     records = []
     for variant in variants:
         for index, item in enumerate(gold, 1):
+            if pause and records:
+                pause()
             answer = answer_question(
                 item["question"], variant, llm, retriever, db_path=db_path, log_path=log_path, validator=validator,
                 dataset=dataset,
@@ -128,6 +141,9 @@ def run_evaluation(gold, llm, retriever, variants, db_path, validator=None, log_
             )
             if progress:
                 progress(variant, index, len(gold), correct)
+            reason = stop_if(answer) if stop_if else None
+            if reason:
+                raise EvaluationStopped(reason, pd.DataFrame(records))
     return pd.DataFrame(records)
 
 

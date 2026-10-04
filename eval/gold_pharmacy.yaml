@@ -1,0 +1,97 @@
+- id: pe01
+  difficulty: easy
+  question: How many days of sales data are there?
+  sql: SELECT COUNT(*) AS day_count FROM dim_date
+- id: pe02
+  difficulty: easy
+  question: What is the total quantity sold for each ATC code?
+  sql: |-
+    SELECT atc_code, ROUND(SUM(quantity), 2) AS total_quantity
+    FROM fact_sales_daily
+    GROUP BY atc_code
+    ORDER BY atc_code
+- id: pe03
+  difficulty: easy
+  question: On how many days were no hypnotics and sedatives (N05C) sold?
+  sql: SELECT COUNT(*) AS zero_days FROM fact_sales_daily WHERE atc_code = 'N05C' AND quantity = 0
+- id: pe04
+  difficulty: easy
+  question: How many ATC categories are in each therapeutic group?
+  sql: |-
+    SELECT therapeutic_group, COUNT(*) AS category_count
+    FROM dim_atc
+    GROUP BY therapeutic_group
+    ORDER BY therapeutic_group
+- id: pm01
+  difficulty: medium
+  question: What was the total quantity sold in each therapeutic group per year?
+  sql: |-
+    SELECT a.therapeutic_group, d.year, ROUND(SUM(f.quantity), 2) AS total_quantity
+    FROM fact_sales_daily f
+    JOIN dim_atc a ON f.atc_code = a.atc_code
+    JOIN dim_date d ON f.date = d.date
+    GROUP BY a.therapeutic_group, d.year
+    ORDER BY a.therapeutic_group, d.year
+- id: pm02
+  difficulty: medium
+  question: What is the average daily quantity of N02BE sold on each weekday?
+  sql: |-
+    SELECT d.weekday, ROUND(AVG(f.quantity), 2) AS avg_quantity
+    FROM fact_sales_daily f
+    JOIN dim_date d ON f.date = d.date
+    WHERE f.atc_code = 'N02BE'
+    GROUP BY d.weekday
+    ORDER BY avg_quantity DESC
+- id: pm03
+  difficulty: medium
+  question: How much of the systemic antihistamines (R06) was sold in each quarter of 2018?
+  sql: |-
+    SELECT d.quarter, ROUND(SUM(f.quantity), 2) AS total_quantity
+    FROM fact_sales_daily f
+    JOIN dim_date d ON f.date = d.date
+    WHERE f.atc_code = 'R06' AND d.year = 2018
+    GROUP BY d.quarter
+    ORDER BY d.quarter
+- id: pm04
+  difficulty: medium
+  question: Which 3 months (year and month) had the highest total quantity of R03?
+  sql: |-
+    SELECT d.year, d.month, ROUND(SUM(f.quantity), 2) AS total_quantity
+    FROM fact_sales_daily f
+    JOIN dim_date d ON f.date = d.date
+    WHERE f.atc_code = 'R03'
+    GROUP BY d.year, d.month
+    ORDER BY total_quantity DESC, d.year, d.month
+    LIMIT 3
+- id: ph01
+  difficulty: hard
+  question: For each ATC category, which calendar month (1 to 12, all years combined) has the highest average daily quantity, and what is that average?
+  sql: |-
+    WITH monthly AS (
+      SELECT f.atc_code, d.month, AVG(f.quantity) AS avg_quantity
+      FROM fact_sales_daily f
+      JOIN dim_date d ON f.date = d.date
+      GROUP BY f.atc_code, d.month
+    ), ranked AS (
+      SELECT atc_code, month, avg_quantity,
+             ROW_NUMBER() OVER (PARTITION BY atc_code ORDER BY avg_quantity DESC, month) AS rn
+      FROM monthly
+    )
+    SELECT atc_code, month, ROUND(avg_quantity, 2) AS avg_daily_quantity
+    FROM ranked
+    WHERE rn = 1
+    ORDER BY atc_code
+- id: ph02
+  difficulty: hard
+  question: What is the average total daily quantity, across all categories together, on weekend days versus weekdays?
+  sql: |-
+    WITH daily AS (
+      SELECT f.date, SUM(f.quantity) AS day_total
+      FROM fact_sales_daily f
+      GROUP BY f.date
+    )
+    SELECT d.is_weekend, ROUND(AVG(daily.day_total), 2) AS avg_daily_quantity
+    FROM daily
+    JOIN dim_date d ON daily.date = d.date
+    GROUP BY d.is_weekend
+    ORDER BY d.is_weekend

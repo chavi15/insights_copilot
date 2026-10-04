@@ -1,0 +1,36 @@
+dialect_notes:
+  - Real daily sales from a single pharmacy, 2 January 2014 to 8 October 2019. 2019 is partial (ends 8 October) and 2014 starts on 2 January.
+  - The data is quantities sold, not revenue. There are no prices, money amounts, customers, products or stores; never invent them.
+  - quantity can be fractional (for example 3.67) because some packs are sold in parts. Round sums and averages to 2 decimals with ROUND.
+  - Drugs are grouped into 8 ATC categories identified by atc_code (M01AB, M01AE, N02BA, N02BE, N05B, N05C, R03, R06). Use dim_atc for descriptions and therapeutic_group.
+  - fact_sales_daily has exactly one row per date and atc_code, including days with quantity 0. 26 days have zero sales in every category, mostly public holidays.
+  - Join fact_sales_daily to dim_date on date for year, month, quarter, weekday or is_weekend. weekday is the full English day name such as Monday; is_weekend is true on Saturday and Sunday.
+  - For an average per day, average the daily totals (sum per date first), not the individual category rows.
+tables:
+  dim_date:
+    description: One row per calendar day in the data, with year, month, quarter, weekday name and weekend flag.
+    keywords: [date, day, days, daily, month, months, monthly, quarter, quarters, year, years, yearly, weekday, weekdays, weekend, weekends, week, calendar, season, time]
+    columns:
+      date: {type: date, description: Primary key, the calendar day}
+      year: {type: integer, description: Calendar year from 2014 to 2019}
+      month: {type: integer, description: Month number from 1 to 12}
+      quarter: {type: integer, description: Calendar quarter from 1 to 4}
+      weekday: {type: text, description: Full day name such as Monday or Sunday}
+      is_weekend: {type: boolean, description: True on Saturday and Sunday}
+  dim_atc:
+    description: One row per ATC drug category with a plain-English description and its therapeutic group.
+    keywords: [atc, code, codes, category, categories, drug, drugs, medicine, medicines, class, classes, group, groups, therapeutic, nsaid, analgesic, analgesics, painkiller, anxiolytic, anxiolytics, hypnotic, sedative, antihistamine, antihistamines, asthma, respiratory]
+    columns:
+      atc_code: {type: text, description: Primary key such as M01AB or R06}
+      description: {type: text, description: What the category contains, such as Anxiolytics}
+      therapeutic_group: {type: text, description: Broader group such as Analgesics or Psycholeptics}
+  fact_sales_daily:
+    description: Quantity sold per day and ATC drug category for one pharmacy. The only fact table.
+    keywords: [sales, sale, sold, quantity, quantities, units, volume, demand, dispensed, total, average]
+    columns:
+      date: {type: date, description: Day of sale, foreign key to dim_date}
+      atc_code: {type: text, description: Drug category, foreign key to dim_atc}
+      quantity: {type: numeric, description: Quantity sold that day; can be fractional and can be 0}
+joins:
+  - [fact_sales_daily, dim_date, date]
+  - [fact_sales_daily, dim_atc, atc_code]

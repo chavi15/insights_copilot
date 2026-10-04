@@ -1,0 +1,383 @@
+- id: e01
+  difficulty: easy
+  question: How many products are in the portfolio?
+  sql: SELECT COUNT(*) AS product_count FROM dim_product
+- id: e02
+  difficulty: easy
+  question: List the product names and their therapeutic areas ordered by product name.
+  sql: SELECT product_name, therapeutic_area FROM dim_product ORDER BY product_name
+- id: e03
+  difficulty: easy
+  question: How many territories are in each region?
+  sql: SELECT region, COUNT(*) AS territory_count FROM dim_territory GROUP BY region ORDER BY region
+- id: e04
+  difficulty: easy
+  question: How many HCPs are there in each tier?
+  sql: SELECT tier, COUNT(*) AS hcp_count FROM dim_hcp GROUP BY tier ORDER BY tier
+- id: e05
+  difficulty: easy
+  question: What is the total revenue across all sales records?
+  sql: SELECT ROUND(SUM(revenue), 2) AS total_revenue FROM fact_sales
+- id: e06
+  difficulty: easy
+  question: What is the total number of units sold?
+  sql: SELECT SUM(units) AS total_units FROM fact_sales
+- id: e07
+  difficulty: easy
+  question: Which products launched in 2024 or later, and when?
+  sql: SELECT product_name, launch_date FROM dim_product WHERE launch_date >= '2024-01-01' ORDER BY launch_date, product_name
+- id: e08
+  difficulty: easy
+  question: How many HCPs have the specialty Cardiologist?
+  sql: SELECT COUNT(*) AS cardiologist_count FROM dim_hcp WHERE specialty = 'Cardiologist'
+- id: e09
+  difficulty: easy
+  question: How many calls were made through each channel?
+  sql: SELECT channel, COUNT(*) AS call_count FROM fact_calls GROUP BY channel ORDER BY channel
+- id: e10
+  difficulty: easy
+  question: What is the average monthly target revenue across all territory and product records?
+  sql: SELECT ROUND(AVG(target_revenue), 2) AS avg_target_revenue FROM targets
+- id: e11
+  difficulty: easy
+  question: How many distinct HCPs have at least one sales record?
+  sql: SELECT COUNT(DISTINCT hcp_id) AS hcp_count FROM fact_sales
+- id: e12
+  difficulty: easy
+  question: List the number of HCPs per specialty, highest first.
+  sql: SELECT specialty, COUNT(*) AS hcp_count FROM dim_hcp GROUP BY specialty ORDER BY hcp_count DESC, specialty
+- id: e13
+  difficulty: easy
+  question: What is the longest call duration in minutes?
+  sql: SELECT MAX(duration_minutes) AS longest_call_minutes FROM fact_calls
+- id: e14
+  difficulty: easy
+  question: Which month names fall in quarter 4 of 2025?
+  sql: SELECT month_name FROM dim_date WHERE year = 2025 AND quarter = 4 ORDER BY month
+- id: e15
+  difficulty: easy
+  question: What are the names of the territories in the West region?
+  sql: SELECT territory_name FROM dim_territory WHERE region = 'West' ORDER BY territory_name
+- id: m01
+  difficulty: medium
+  question: What was the total revenue for each product in 2025?
+  sql: |-
+    SELECT p.product_name, ROUND(SUM(s.revenue), 2) AS total_revenue
+    FROM fact_sales s
+    JOIN dim_product p ON s.product_id = p.product_id
+    JOIN dim_date d ON s.date_id = d.date_id
+    WHERE d.year = 2025
+    GROUP BY p.product_name
+    ORDER BY total_revenue DESC, p.product_name
+- id: m02
+  difficulty: medium
+  question: What is the total revenue for each region?
+  sql: |-
+    SELECT t.region, ROUND(SUM(s.revenue), 2) AS total_revenue
+    FROM fact_sales s
+    JOIN dim_hcp h ON s.hcp_id = h.hcp_id
+    JOIN dim_territory t ON h.territory_id = t.territory_id
+    GROUP BY t.region
+    ORDER BY t.region
+- id: m03
+  difficulty: medium
+  question: Which therapeutic area generated the highest revenue in 2025?
+  sql: |-
+    SELECT p.therapeutic_area, ROUND(SUM(s.revenue), 2) AS total_revenue
+    FROM fact_sales s
+    JOIN dim_product p ON s.product_id = p.product_id
+    JOIN dim_date d ON s.date_id = d.date_id
+    WHERE d.year = 2025
+    GROUP BY p.therapeutic_area
+    ORDER BY total_revenue DESC, p.therapeutic_area
+    LIMIT 1
+- id: m04
+  difficulty: medium
+  question: What was the total revenue in each quarter of 2024?
+  sql: |-
+    SELECT d.quarter, ROUND(SUM(s.revenue), 2) AS total_revenue
+    FROM fact_sales s
+    JOIN dim_date d ON s.date_id = d.date_id
+    WHERE d.year = 2024
+    GROUP BY d.quarter
+    ORDER BY d.quarter
+- id: m05
+  difficulty: medium
+  question: How many calls were made to HCPs in each tier?
+  sql: |-
+    SELECT h.tier, COUNT(*) AS call_count
+    FROM fact_calls c
+    JOIN dim_hcp h ON c.hcp_id = h.hcp_id
+    GROUP BY h.tier
+    ORDER BY h.tier
+- id: m06
+  difficulty: medium
+  question: What is the average call duration in minutes for each HCP tier?
+  sql: |-
+    SELECT h.tier, ROUND(AVG(c.duration_minutes), 2) AS avg_duration_minutes
+    FROM fact_calls c
+    JOIN dim_hcp h ON c.hcp_id = h.hcp_id
+    GROUP BY h.tier
+    ORDER BY h.tier
+- id: m07
+  difficulty: medium
+  question: What is the average revenue per sales record for each HCP tier?
+  sql: |-
+    SELECT h.tier, ROUND(AVG(s.revenue), 2) AS avg_revenue_per_record
+    FROM fact_sales s
+    JOIN dim_hcp h ON s.hcp_id = h.hcp_id
+    GROUP BY h.tier
+    ORDER BY h.tier
+- id: m08
+  difficulty: medium
+  question: Which 5 territories had the highest total revenue?
+  sql: |-
+    SELECT t.territory_name, ROUND(SUM(s.revenue), 2) AS total_revenue
+    FROM fact_sales s
+    JOIN dim_hcp h ON s.hcp_id = h.hcp_id
+    JOIN dim_territory t ON h.territory_id = t.territory_id
+    GROUP BY t.territory_name
+    ORDER BY total_revenue DESC, t.territory_name
+    LIMIT 5
+- id: m09
+  difficulty: medium
+  question: Show the revenue for each region in each quarter of 2025.
+  sql: |-
+    SELECT t.region, d.quarter, ROUND(SUM(s.revenue), 2) AS total_revenue
+    FROM fact_sales s
+    JOIN dim_hcp h ON s.hcp_id = h.hcp_id
+    JOIN dim_territory t ON h.territory_id = t.territory_id
+    JOIN dim_date d ON s.date_id = d.date_id
+    WHERE d.year = 2025
+    GROUP BY t.region, d.quarter
+    ORDER BY t.region, d.quarter
+- id: m10
+  difficulty: medium
+  question: Which territories had total revenue above 1,800,000 over the whole period, and which rep covers each?
+  sql: |-
+    SELECT t.territory_name, t.rep_name, ROUND(SUM(s.revenue), 2) AS total_revenue
+    FROM fact_sales s
+    JOIN dim_hcp h ON s.hcp_id = h.hcp_id
+    JOIN dim_territory t ON h.territory_id = t.territory_id
+    GROUP BY t.territory_name, t.rep_name
+    HAVING SUM(s.revenue) > 1800000
+    ORDER BY total_revenue DESC, t.territory_name
+- id: m11
+  difficulty: medium
+  question: How many distinct HCPs had sales in each region in 2025?
+  sql: |-
+    SELECT t.region, COUNT(DISTINCT s.hcp_id) AS active_hcps
+    FROM fact_sales s
+    JOIN dim_hcp h ON s.hcp_id = h.hcp_id
+    JOIN dim_territory t ON h.territory_id = t.territory_id
+    JOIN dim_date d ON s.date_id = d.date_id
+    WHERE d.year = 2025
+    GROUP BY t.region
+    ORDER BY t.region
+- id: m12
+  difficulty: medium
+  question: What were the total call minutes in each month of 2025?
+  sql: |-
+    SELECT d.month, d.month_name, SUM(c.duration_minutes) AS total_minutes
+    FROM fact_calls c
+    JOIN dim_date d ON c.date_id = d.date_id
+    WHERE d.year = 2025
+    GROUP BY d.month, d.month_name
+    ORDER BY d.month
+- id: m13
+  difficulty: medium
+  question: What is the total revenue of the product Cardiva in each region?
+  sql: |-
+    SELECT t.region, ROUND(SUM(s.revenue), 2) AS total_revenue
+    FROM fact_sales s
+    JOIN dim_product p ON s.product_id = p.product_id
+    JOIN dim_hcp h ON s.hcp_id = h.hcp_id
+    JOIN dim_territory t ON h.territory_id = t.territory_id
+    WHERE p.product_name = 'Cardiva'
+    GROUP BY t.region
+    ORDER BY t.region
+- id: m14
+  difficulty: medium
+  question: What is the total target revenue for each product?
+  sql: |-
+    SELECT p.product_name, ROUND(SUM(g.target_revenue), 2) AS total_target
+    FROM targets g
+    JOIN dim_product p ON g.product_id = p.product_id
+    GROUP BY p.product_name
+    ORDER BY p.product_name
+- id: m15
+  difficulty: medium
+  question: How many sales records involve tier A HCPs for the product Dermis?
+  sql: |-
+    SELECT COUNT(*) AS sales_records
+    FROM fact_sales s
+    JOIN dim_hcp h ON s.hcp_id = h.hcp_id
+    JOIN dim_product p ON s.product_id = p.product_id
+    WHERE h.tier = 'A' AND p.product_name = 'Dermis'
+- id: h01
+  difficulty: hard
+  question: Show total revenue by month together with the change from the previous month.
+  sql: |-
+    WITH monthly AS (
+      SELECT d.date_id, SUM(s.revenue) AS revenue
+      FROM fact_sales s
+      JOIN dim_date d ON s.date_id = d.date_id
+      GROUP BY d.date_id
+    )
+    SELECT date_id, ROUND(revenue, 2) AS revenue, ROUND(revenue - LAG(revenue) OVER (ORDER BY date_id), 2) AS change_vs_prev_month
+    FROM monthly
+    ORDER BY date_id
+- id: h02
+  difficulty: hard
+  question: Which territories missed their total target revenue in Q4 2025? Show actual revenue and target.
+  sql: |-
+    WITH actual AS (
+      SELECT h.territory_id, s.product_id, s.date_id, SUM(s.revenue) AS actual_revenue
+      FROM fact_sales s
+      JOIN dim_hcp h ON s.hcp_id = h.hcp_id
+      GROUP BY h.territory_id, s.product_id, s.date_id
+    )
+    SELECT t.territory_name, ROUND(SUM(a.actual_revenue), 2) AS actual_revenue, ROUND(SUM(g.target_revenue), 2) AS target_revenue
+    FROM targets g
+    JOIN actual a ON a.territory_id = g.territory_id AND a.product_id = g.product_id AND a.date_id = g.date_id
+    JOIN dim_date d ON g.date_id = d.date_id
+    JOIN dim_territory t ON g.territory_id = t.territory_id
+    WHERE d.year = 2025 AND d.quarter = 4
+    GROUP BY t.territory_name
+    HAVING SUM(a.actual_revenue) < SUM(g.target_revenue)
+    ORDER BY t.territory_name
+- id: h03
+  difficulty: hard
+  question: What are the top 3 territories by total revenue within each region?
+  sql: |-
+    WITH rev AS (
+      SELECT t.region, t.territory_name, SUM(s.revenue) AS total_revenue
+      FROM fact_sales s
+      JOIN dim_hcp h ON s.hcp_id = h.hcp_id
+      JOIN dim_territory t ON h.territory_id = t.territory_id
+      GROUP BY t.region, t.territory_name
+    ), ranked AS (
+      SELECT region, territory_name, total_revenue,
+             ROW_NUMBER() OVER (PARTITION BY region ORDER BY total_revenue DESC, territory_name) AS rn
+      FROM rev
+    )
+    SELECT region, territory_name, ROUND(total_revenue, 2) AS total_revenue
+    FROM ranked
+    WHERE rn <= 3
+    ORDER BY region, rn
+- id: h04
+  difficulty: hard
+  question: Show the running total of revenue by month for 2025.
+  sql: |-
+    WITH monthly AS (
+      SELECT d.date_id, SUM(s.revenue) AS revenue
+      FROM fact_sales s
+      JOIN dim_date d ON s.date_id = d.date_id
+      WHERE d.year = 2025
+      GROUP BY d.date_id
+    )
+    SELECT date_id, ROUND(revenue, 2) AS revenue, ROUND(SUM(revenue) OVER (ORDER BY date_id), 2) AS running_total
+    FROM monthly
+    ORDER BY date_id
+- id: h05
+  difficulty: hard
+  question: Which products had higher revenue in 2025 than in 2024? Show both years.
+  sql: |-
+    SELECT p.product_name,
+           ROUND(SUM(CASE WHEN d.year = 2024 THEN s.revenue ELSE 0 END), 2) AS revenue_2024,
+           ROUND(SUM(CASE WHEN d.year = 2025 THEN s.revenue ELSE 0 END), 2) AS revenue_2025
+    FROM fact_sales s
+    JOIN dim_product p ON s.product_id = p.product_id
+    JOIN dim_date d ON s.date_id = d.date_id
+    GROUP BY p.product_name
+    HAVING SUM(CASE WHEN d.year = 2025 THEN s.revenue ELSE 0 END) > SUM(CASE WHEN d.year = 2024 THEN s.revenue ELSE 0 END)
+    ORDER BY p.product_name
+- id: h06
+  difficulty: hard
+  question: For each HCP tier, who are the top 2 HCPs by total revenue?
+  sql: |-
+    WITH hcp_rev AS (
+      SELECT h.tier, h.hcp_id, h.hcp_name, SUM(s.revenue) AS total_revenue
+      FROM fact_sales s
+      JOIN dim_hcp h ON s.hcp_id = h.hcp_id
+      GROUP BY h.tier, h.hcp_id, h.hcp_name
+    ), ranked AS (
+      SELECT tier, hcp_id, hcp_name, total_revenue,
+             ROW_NUMBER() OVER (PARTITION BY tier ORDER BY total_revenue DESC, hcp_id) AS rn
+      FROM hcp_rev
+    )
+    SELECT tier, hcp_name, ROUND(total_revenue, 2) AS total_revenue
+    FROM ranked
+    WHERE rn <= 2
+    ORDER BY tier, rn
+- id: h07
+  difficulty: hard
+  question: What percentage of total revenue does each region contribute?
+  sql: |-
+    WITH region_rev AS (
+      SELECT t.region, SUM(s.revenue) AS revenue
+      FROM fact_sales s
+      JOIN dim_hcp h ON s.hcp_id = h.hcp_id
+      JOIN dim_territory t ON h.territory_id = t.territory_id
+      GROUP BY t.region
+    )
+    SELECT region, ROUND(revenue, 2) AS revenue, ROUND(100.0 * revenue / SUM(revenue) OVER (), 2) AS pct_of_total
+    FROM region_rev
+    ORDER BY region
+- id: h08
+  difficulty: hard
+  question: How many HCPs had sales in 2025 but received no calls in 2025?
+  sql: |-
+    SELECT COUNT(DISTINCT s.hcp_id) AS hcp_count
+    FROM fact_sales s
+    JOIN dim_date d ON s.date_id = d.date_id
+    WHERE d.year = 2025
+      AND NOT EXISTS (
+        SELECT 1
+        FROM fact_calls c
+        JOIN dim_date d2 ON c.date_id = d2.date_id
+        WHERE c.hcp_id = s.hcp_id AND d2.year = 2025
+      )
+- id: h09
+  difficulty: hard
+  question: For each region in 2025, what is the revenue per call (total revenue divided by total calls)?
+  sql: |-
+    WITH rev AS (
+      SELECT t.region, SUM(s.revenue) AS revenue
+      FROM fact_sales s
+      JOIN dim_hcp h ON s.hcp_id = h.hcp_id
+      JOIN dim_territory t ON h.territory_id = t.territory_id
+      JOIN dim_date d ON s.date_id = d.date_id
+      WHERE d.year = 2025
+      GROUP BY t.region
+    ), calls AS (
+      SELECT t.region, COUNT(*) AS call_count
+      FROM fact_calls c
+      JOIN dim_hcp h ON c.hcp_id = h.hcp_id
+      JOIN dim_territory t ON h.territory_id = t.territory_id
+      JOIN dim_date d ON c.date_id = d.date_id
+      WHERE d.year = 2025
+      GROUP BY t.region
+    )
+    SELECT rev.region, ROUND(rev.revenue / calls.call_count, 2) AS revenue_per_call
+    FROM rev
+    JOIN calls ON rev.region = calls.region
+    ORDER BY rev.region
+- id: h10
+  difficulty: hard
+  question: In which month did each product have its highest revenue?
+  sql: |-
+    WITH monthly AS (
+      SELECT p.product_name, s.date_id, SUM(s.revenue) AS revenue
+      FROM fact_sales s
+      JOIN dim_product p ON s.product_id = p.product_id
+      GROUP BY p.product_name, s.date_id
+    ), ranked AS (
+      SELECT product_name, date_id, revenue,
+             RANK() OVER (PARTITION BY product_name ORDER BY revenue DESC) AS rnk
+      FROM monthly
+    )
+    SELECT product_name, date_id, ROUND(revenue, 2) AS revenue
+    FROM ranked
+    WHERE rnk = 1
+    ORDER BY product_name

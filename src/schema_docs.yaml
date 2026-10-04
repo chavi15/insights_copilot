@@ -1,0 +1,81 @@
+dialect_notes:
+  - The data covers 24 months, from January 2024 to December 2025. dim_date.date_id is an integer like 202401.
+  - Use dim_date.year, quarter (1-4) and month (1-12) for time filters. month_start is the first day of the month.
+  - fact_sales has no territory column. A sale belongs to a territory through dim_hcp.territory_id.
+  - fact_calls also reaches territories only through dim_hcp.
+  - tier is 'A', 'B' or 'C' and A is the highest-value tier of healthcare professionals (HCPs).
+  - Revenue is a plain numeric amount in one currency. Targets are monthly per territory and product.
+  - Targets exist only for territory-product-months that had sales.
+tables:
+  dim_product:
+    description: One row per pharmaceutical product in the portfolio, with its therapeutic area and launch date.
+    keywords: [product, products, drug, brand, portfolio, therapeutic, area, launch, launched]
+    columns:
+      product_id: {type: integer, description: Primary key of the product}
+      product_name: {type: text, description: Brand name of the product}
+      therapeutic_area: {type: text, description: Medical area such as Cardiology or Oncology}
+      launch_date: {type: date, description: Date the product launched}
+  dim_territory:
+    description: One row per sales territory, with its region and the sales representative who covers it.
+    keywords: [territory, territories, region, regions, rep, representative, area, north, south, east, west]
+    columns:
+      territory_id: {type: integer, description: Primary key of the territory}
+      territory_name: {type: text, description: Territory name such as North T01}
+      region: {type: text, description: One of North, South, East, West}
+      rep_name: {type: text, description: Name of the sales representative}
+  dim_hcp:
+    description: One row per healthcare professional (HCP, a doctor) with specialty, value tier and territory.
+    keywords: [hcp, hcps, doctor, doctors, physician, specialty, specialties, tier, segment, customer]
+    columns:
+      hcp_id: {type: integer, description: Primary key of the HCP}
+      hcp_name: {type: text, description: Name of the doctor}
+      specialty: {type: text, description: Medical specialty such as Cardiologist or General Physician}
+      tier: {type: text, description: Value tier A, B or C where A is highest}
+      territory_id: {type: integer, description: Territory the HCP belongs to, foreign key to dim_territory}
+  dim_date:
+    description: One row per calendar month from January 2024 to December 2025.
+    keywords: [date, month, months, quarter, quarters, year, time, monthly, quarterly, yearly, period]
+    columns:
+      date_id: {type: integer, description: Primary key as YYYYMM, for example 202503}
+      month_start: {type: date, description: First day of the month}
+      year: {type: integer, description: Calendar year such as 2024 or 2025}
+      quarter: {type: integer, description: Calendar quarter from 1 to 4}
+      month: {type: integer, description: Month number from 1 to 12}
+      month_name: {type: text, description: Short month name such as Jan}
+  fact_sales:
+    description: Monthly sales per HCP and product, with units sold and revenue. The largest fact table.
+    keywords: [sales, sale, sold, revenue, units, unit, prescriptions, growth, share, turnover, income]
+    columns:
+      sale_id: {type: integer, description: Primary key of the sales record}
+      date_id: {type: integer, description: Month of the sale, foreign key to dim_date}
+      hcp_id: {type: integer, description: HCP the sale is attributed to, foreign key to dim_hcp}
+      product_id: {type: integer, description: Product sold, foreign key to dim_product}
+      units: {type: integer, description: Number of units sold}
+      revenue: {type: numeric, description: Revenue of the sales record}
+  fact_calls:
+    description: One row per sales call made to an HCP, with channel and duration in minutes.
+    keywords: [call, calls, visit, visits, channel, channels, duration, engagement, contact, outreach, email, phone, video, person]
+    columns:
+      call_id: {type: integer, description: Primary key of the call}
+      date_id: {type: integer, description: Month of the call, foreign key to dim_date}
+      hcp_id: {type: integer, description: HCP who was called, foreign key to dim_hcp}
+      channel: {type: text, description: One of In-person, Phone, Email, Video}
+      duration_minutes: {type: integer, description: Length of the call in minutes}
+  targets:
+    description: Monthly revenue target per territory and product, used to measure attainment against actual sales.
+    keywords: [target, targets, goal, goals, quota, attainment, missed, miss, achieve, achievement, plan, budget]
+    columns:
+      territory_id: {type: integer, description: Territory the target applies to, foreign key to dim_territory}
+      product_id: {type: integer, description: Product the target applies to, foreign key to dim_product}
+      date_id: {type: integer, description: Month of the target, foreign key to dim_date}
+      target_revenue: {type: numeric, description: Revenue target for that territory, product and month}
+joins:
+  - [fact_sales, dim_date, date_id]
+  - [fact_sales, dim_hcp, hcp_id]
+  - [fact_sales, dim_product, product_id]
+  - [fact_calls, dim_date, date_id]
+  - [fact_calls, dim_hcp, hcp_id]
+  - [dim_hcp, dim_territory, territory_id]
+  - [targets, dim_territory, territory_id]
+  - [targets, dim_product, product_id]
+  - [targets, dim_date, date_id]

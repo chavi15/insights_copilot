@@ -1,0 +1,63 @@
+variant,id,difficulty,question,status,correct,failure_category,generated_sql,gold_sql,error,latency_ms
+zero_shot_full_schema,e01,easy,How many products are in the portfolio?,ok,True,,"SELECT
+    COUNT(*) AS total_products
+FROM dim_product",SELECT COUNT(*) AS product_count FROM dim_product,,116.2
+zero_shot_full_schema,e02,easy,List the product names and their therapeutic areas ordered by product name.,ok,True,,"SELECT
+  product_name,
+  therapeutic_area
+FROM dim_product
+ORDER BY
+  product_name,
+  product_id","SELECT product_name, therapeutic_area FROM dim_product ORDER BY product_name",,11.7
+zero_shot_full_schema,e03,easy,How many territories are in each region?,ok,True,,"SELECT
+    region,
+    COUNT(territory_id) AS territory_count
+FROM dim_territory
+GROUP BY
+    region
+ORDER BY
+    territory_count DESC,
+    region ASC","SELECT region, COUNT(*) AS territory_count FROM dim_territory GROUP BY region ORDER BY region",,12.7
+zero_shot_full_schema,e04,easy,How many HCPs are there in each tier?,ok,True,,"SELECT
+    tier,
+    COUNT(hcp_id) AS hcp_count
+FROM dim_hcp
+GROUP BY
+    tier
+ORDER BY
+    tier ASC","SELECT tier, COUNT(*) AS hcp_count FROM dim_hcp GROUP BY tier ORDER BY tier",,11.3
+zero_shot_full_schema,e05,easy,What is the total revenue across all sales records?,ok,True,,"SELECT
+  ROUND(SUM(revenue), 2) AS total_revenue
+FROM fact_sales","SELECT ROUND(SUM(revenue), 2) AS total_revenue FROM fact_sales",,10.9
+zero_shot_full_schema,e06,easy,What is the total number of units sold?,ok,True,,"SELECT
+    SUM(units) AS total_units_sold
+FROM fact_sales",SELECT SUM(units) AS total_units FROM fact_sales,,11.7
+few_shot_full_schema,e01,easy,How many products are in the portfolio?,ok,True,,"SELECT COUNT(*) AS total_products
+FROM dim_product",SELECT COUNT(*) AS product_count FROM dim_product,,10.4
+few_shot_full_schema,e02,easy,List the product names and their therapeutic areas ordered by product name.,ok,True,,"SELECT product_name, therapeutic_area
+FROM dim_product
+ORDER BY product_name","SELECT product_name, therapeutic_area FROM dim_product ORDER BY product_name",,10.1
+few_shot_full_schema,e03,easy,How many territories are in each region?,ok,True,,"SELECT
+  region,
+  COUNT(*) AS territory_count
+FROM dim_territory
+GROUP BY region
+ORDER BY region","SELECT region, COUNT(*) AS territory_count FROM dim_territory GROUP BY region ORDER BY region",,10.4
+few_shot_full_schema,e04,easy,How many HCPs are there in each tier?,ok,True,,"SELECT
+  tier,
+  COUNT(*) AS hcp_count
+FROM dim_hcp
+GROUP BY tier
+ORDER BY tier","SELECT tier, COUNT(*) AS hcp_count FROM dim_hcp GROUP BY tier ORDER BY tier",,10.7
+few_shot_full_schema,e05,easy,What is the total revenue across all sales records?,ok,True,,"SELECT ROUND(SUM(revenue), 2) AS total_revenue
+FROM fact_sales","SELECT ROUND(SUM(revenue), 2) AS total_revenue FROM fact_sales",,10.2
+few_shot_full_schema,e06,easy,What is the total number of units sold?,generation_error,False,other,,SELECT SUM(units) AS total_units FROM fact_sales,"ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ",123468.0
+retrieval_few_shot,e01,easy,How many products are in the portfolio?,generation_error,False,other,,SELECT COUNT(*) AS product_count FROM dim_product,"ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ",123876.9
+retrieval_few_shot,e02,easy,List the product names and their therapeutic areas ordered by product name.,generation_error,False,other,,"SELECT product_name, therapeutic_area FROM dim_product ORDER BY product_name","ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ",123639.5
+retrieval_few_shot,e03,easy,How many territories are in each region?,generation_error,False,other,,"SELECT region, COUNT(*) AS territory_count FROM dim_territory GROUP BY region ORDER BY region","ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ",123670.1
+retrieval_few_shot,e04,easy,How many HCPs are there in each tier?,ok,True,,"SELECT tier, COUNT(*) AS hcp_count
+FROM dim_hcp
+GROUP BY tier
+ORDER BY tier","SELECT tier, COUNT(*) AS hcp_count FROM dim_hcp GROUP BY tier ORDER BY tier",,228.0
+retrieval_few_shot,e05,easy,What is the total revenue across all sales records?,generation_error,False,other,,"SELECT ROUND(SUM(revenue), 2) AS total_revenue FROM fact_sales","ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ",122913.6
+retrieval_few_shot,e06,easy,What is the total number of units sold?,generation_error,False,other,,SELECT SUM(units) AS total_units FROM fact_sales,"ClientError: 429 RESOURCE_EXHAUSTED. {'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. To monitor your current usage, head to: https://ai.dev/rate-limit. ",123172.8

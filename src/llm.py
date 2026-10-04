@@ -8,6 +8,8 @@ from pathlib import Path
 from src.config import CACHE_DIR
 
 DEFAULT_MODELS = {"anthropic": "claude-sonnet-5-5", "gemini": "gemini-3.8-flash"}
+MAX_OUTPUT_TOKENS = 900
+GEMINI_MAX_OUTPUT_TOKENS = 2048
 
 
 class LLMError(RuntimeError):
@@ -32,10 +34,14 @@ class AnthropicLLM:
         self.model = model or os.getenv("LLM_MODEL") or DEFAULT_MODELS["anthropic"]
 
     def _call(self, prompt, with_temperature):
-        kwargs = {"model": self.model, "max_tokens": 900, "messages": [{"role": "user", "content": prompt}]}
+        kwargs = {"model": self.model, "max_tokens": MAX_OUTPUT_TOKENS, "messages": [{"role": "user", "content": prompt}]}
         if with_temperature:
             kwargs["temperature"] = 0
         response = self.client.messages.create(**kwargs)
+        if getattr(response, "stop_reason", None) == "max_tokens":
+            raise LLMError(
+                f"The model's answer was cut off at the {MAX_OUTPUT_TOKENS}-token output limit, so it was not run as SQL."
+            )
         return "".join(block.text for block in response.content if getattr(block, "type", "") == "text")
 
     def complete(self, prompt):
@@ -59,11 +65,43 @@ class GeminiLLM:
         self.client = genai.Client(api_key=key)
         self.model = model or os.getenv("LLM_MODEL") or DEFAULT_MODELS["gemini"]
 
+    def config(self):
+        """Hidden thinking tokens count against max_output_tokens, so keep thinking minimal for NL-to-SQL."""
+        name = self.model.lower()
+        if name.startswith("gemini-2"):
+            thinking = {"thinking_budget": 128 if "pro" in name else 0}  # 2.5 Pro cannot turn thinking off
+        else:
+            thinking = {"thinking_level": "low"}
+        return {"temperature": 0, "max_output_tokens": GEMINI_MAX_OUTPUT_TOKENS, "thinking_config": thinking}
+
     def complete(self, prompt):
-        response = self.client.models.generate_content(
-            model=self.model, contents=prompt, config={"temperature": 0, "max_output_tokens": 900}
-        )
+        response = self.client.models.generate_content(model=self.model, contents=prompt, config=self.config())
+        check_gemini_finish(response, GEMINI_MAX_OUTPUT_TOKENS)
         return response.text or ""
+
+
+def _finish_name(reason):
+    return str(getattr(reason, "name", None) or reason or "").rsplit(".", 1)[-1].upper()
+
+
+def check_gemini_finish(response, limit):
+    """Raise instead of returning a truncated or blocked answer, which would otherwise be run as broken SQL."""
+    candidates = getattr(response, "candidates", None) or []
+    if not candidates:
+        raise LLMError("Gemini returned no answer.")
+    reason = _finish_name(getattr(candidates[0], "finish_reason", None))
+    if reason in ("", "STOP", "FINISH_REASON_UNSPECIFIED"):
+        return
+    usage = getattr(response, "usage_metadata", None)
+    thoughts = getattr(usage, "thoughts_token_count", None)
+    if reason == "MAX_TOKENS":
+        detail = f" ({thoughts} of them spent on thinking)" if thoughts else ""
+        raise LLMError(
+            f"Gemini stopped at the max_output_tokens limit of {limit}{detail}. "
+            "The answer was cut off, so it was not run as SQL."
+        )
+    message = getattr(candidates[0], "finish_message", None)
+    raise LLMError(f"Gemini stopped early (finish_reason {reason}{': ' + message if message else ''}), so the answer was not used.")
 
 
 class ScriptedLLM:
@@ -95,6 +133,8 @@ class RetryingLLM:
         for attempt in range(self.attempts):
             try:
                 return self.inner.complete(prompt)
+            except LLMError:
+                raise  # our own errors, such as a truncated answer, are not worth retrying
             except Exception as error:
                 if attempt == self.attempts - 1 or not _is_rate_limit(error):
                     raise

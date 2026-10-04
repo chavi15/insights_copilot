@@ -235,6 +235,8 @@ def render_status_message(answer):
     if answer.status == "generation_error":
         if is_quota_error(answer.error):
             st.warning(QUOTA_MESSAGE)
+        elif "max_output_tokens" in (answer.error or "") or "cut off" in (answer.error or ""):
+            st.error("The model's answer was cut off before the SQL was complete, so nothing was run. Please try again.")
         else:
             st.error("The language model could not be reached just now. Please try again in a moment.")
         st.caption(f"Details: {answer.error}")

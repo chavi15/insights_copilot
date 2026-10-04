@@ -14,9 +14,11 @@ from src.nl2sql import extract_sql
 
 DIALECTS = {"Oracle": "oracle", "PostgreSQL": "postgres", "MySQL": "mysql", "DuckDB": "duckdb"}
 MAX_SCHEMA_CHARS = 20_000
+MAX_SCHEMAS = 5
 PRIVACY_WARNING = "Only table and column names are sent to Google's Gemini API. Don't paste confidential schemas."
 
 _IDENT = r'(?:"[^"\n]{1,128}"|`[^`\n]{1,128}`|\[[^\]\n]{1,128}\]|[A-Za-z_][\w$#]{0,127})'
+_SCHEMA_NAME = re.compile(r"^[A-Za-z_][\w$#]{0,29}$")
 _NAME = re.compile(rf"{_IDENT}(?:\s*\.\s*{_IDENT}){{0,2}}")
 _CREATE = re.compile(
     rf"\bcreate\s+(?:or\s+replace\s+)?(?:(?:global\s+|local\s+)?(?:temporary|temp)\s+|unlogged\s+)?table\s+"
@@ -45,6 +47,10 @@ Rules:
 - Column data types are not provided; infer them from the names and say so if an assumption matters.
 - If the question cannot be fully answered from these tables, write the closest query and explain the gap.
 - After the fenced block, write "Explanation:" followed by two to four short sentences on what the query does."""
+QUALIFIED_RULE = (
+    "- Tables are listed as SCHEMA.table. Always reference them with the schema prefix, and treat same-named "
+    "tables in different schemas as different tables."
+)
 
 
 @dataclass(frozen=True)
@@ -146,14 +152,54 @@ def parse_schema(text):
     return tables
 
 
+def _unqualified(table):
+    return re.findall(_IDENT, table)[-1]
+
+
+def parse_schemas(entries):
+    """Parse [(schema_name, paste), ...] into {SCHEMA.table: [columns]}.
+
+    A single entry with no name keeps the unqualified behaviour of parse_schema.
+    The character limit applies to all pastes together.
+    """
+    entries = [((name or "").strip(), paste or "") for name, paste in entries if (name or "").strip() or (paste or "").strip()]
+    if not entries:
+        raise ValueError("Paste at least one table definition.")
+    if len(entries) > MAX_SCHEMAS:
+        raise ValueError(f"Use at most {MAX_SCHEMAS} schemas.")
+    total = sum(len(paste) for _, paste in entries)
+    if total > MAX_SCHEMA_CHARS:
+        raise ValueError(f"The schemas are too long together ({total:,} characters). The limit is {MAX_SCHEMA_CHARS:,}.")
+    if len(entries) == 1 and not entries[0][0]:
+        return parse_schema(entries[0][1])
+
+    tables, seen = {}, set()
+    for name, paste in entries:
+        if not name:
+            raise ValueError("Give every schema a name, such as HR or SALES.")
+        if not _SCHEMA_NAME.match(name):
+            raise ValueError(f"Schema name {name!r} must start with a letter and use only letters, digits and _ (30 characters at most).")
+        if name.upper() in seen:
+            raise ValueError(f"Schema name {name} is used twice. Schema names must be unique (case does not matter).")
+        seen.add(name.upper())
+        try:
+            parsed = parse_schema(paste)
+        except ValueError as error:
+            raise ValueError(f"Schema {name}: {error}") from None
+        for table, columns in parsed.items():
+            _add(tables, f"{name}.{_unqualified(table)}", columns)
+    return tables
+
+
 def render_schema(tables):
     return "\n".join(f"{table}({', '.join(columns)})" for table, columns in tables.items())
 
 
-def build_prompt(question, schema_text, dialect_label):
-    return "\n\n".join(
-        [INSTRUCTIONS.format(dialect=dialect_label), "TABLES (table(columns)):\n" + schema_text, f"Question: {question}"]
-    )
+def build_prompt(question, schema_text, dialect_label, qualified=False):
+    instructions = INSTRUCTIONS.format(dialect=dialect_label)
+    if qualified:
+        instructions += "\n" + QUALIFIED_RULE
+    return "\n\n".join([instructions, "TABLES (table(columns)):\n" + schema_text, f"Question: {question}"])
 
 
 def extract_explanation(text):
@@ -208,13 +254,16 @@ def check_sql(sql, dialect="duckdb"):
     return SqlCheck("ok", "ok")
 
 
-def write_sql(question, schema_paste, dialect_label, llm):
+def write_sql(question, schemas, dialect_label, llm):
+    """schemas is one pasted string, or a list of (schema_name, paste) pairs."""
     if dialect_label not in DIALECTS:
         raise ValueError(f"Unsupported dialect: {dialect_label}")
     if not question or not question.strip():
         raise ValueError("Ask a question.")
-    schema_text = render_schema(parse_schema(schema_paste))
-    text = llm.complete(build_prompt(question.strip(), schema_text, dialect_label))
+    tables = parse_schema(schemas) if isinstance(schemas, str) else parse_schemas(schemas)
+    qualified = not isinstance(schemas, str) and any(name and name.strip() for name, _ in schemas)
+    schema_text = render_schema(tables)
+    text = llm.complete(build_prompt(question.strip(), schema_text, dialect_label, qualified))
     sql = extract_sql(text)
     return SchemaAnswer(sql, extract_explanation(text), check_sql(sql, DIALECTS[dialect_label]), schema_text)
 

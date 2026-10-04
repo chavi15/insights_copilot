@@ -27,7 +27,8 @@ from src.nl2sql import VARIANTS
 from src.pipeline import answer_question
 from src.retrieval import get_retriever
 from src.schema import load_schema
-from src.schema_assistant import DIALECTS, MAX_SCHEMA_CHARS, PRIVACY_WARNING, build_schema_llm, write_sql
+from src.schema_assistant import DIALECTS, MAX_SCHEMA_CHARS, MAX_SCHEMAS, PRIVACY_WARNING, build_schema_llm, write_sql
+from src.sql_optimizer import MAX_PLAN_CHARS, MAX_QUERY_CHARS, OPTIMIZER_WARNING, SUGGESTIONS_LABEL, analyze, suggest
 
 SAMPLE_QUESTIONS = [
     "What was the total revenue for each product in 2025?",
@@ -296,42 +297,129 @@ def render_schema_answer(answer, dialect):
         st.code(answer.schema_sent, language="text")
 
 
+def call_schema_model(state_key, work):
+    """Run one Gemini call for schema mode. Inputs and outputs live only in session state."""
+    st.session_state.pop(state_key, None)
+    live_calls = st.session_state.get("live_calls", 0)
+    if live_calls >= MAX_LIVE_CALLS:
+        st.warning("This session reached its live-call limit.")
+        return
+    try:
+        llm = get_schema_llm()
+    except LLMError as error:
+        st.error(f"Schema mode uses Google's Gemini API. {error}")
+        return
+    try:
+        with st.spinner("Asking Gemini..."):
+            st.session_state[state_key] = work(llm)
+        st.session_state["live_calls"] = live_calls + 1
+    except ValueError as error:
+        st.error(str(error))
+    except Exception as error:
+        st.session_state["live_calls"] = live_calls + 1
+        if is_quota_error(str(error)):
+            st.warning("Free-tier limit reached. Please try again later.")
+        else:
+            st.error(f"The language model could not be reached just now ({type(error).__name__}). Please try again.")
+
+
+def schema_inputs():
+    count = int(st.number_input("Number of schemas", min_value=1, max_value=MAX_SCHEMAS, value=1, key="schema_count"))
+    entries = []
+    for index in range(count):
+        name_col, paste_col = st.columns([1, 4])
+        with name_col:
+            name = st.text_input(
+                "Schema name" + (" (optional)" if count == 1 else ""),
+                key=f"schema_name_{index}",
+                max_chars=30,
+                placeholder="HR" if index == 0 else "SALES",
+            )
+        with paste_col:
+            paste = st.text_area(
+                "CREATE TABLE statements, or one table per line such as orders: order_id, customer_id, total",
+                key=f"schema_paste_{index}",
+                height=160,
+                max_chars=MAX_SCHEMA_CHARS,
+            )
+        entries.append((name, paste))
+    total = sum(len(paste) for _, paste in entries)
+    st.caption(f"Total schema text: {total:,} / {MAX_SCHEMA_CHARS:,} characters. Table names are sent as SCHEMA.table when schemas are named.")
+    return entries
+
+
+def render_findings(analysis):
+    if analysis.parse_error:
+        st.warning(f"sqlglot could not parse this query, so the rule checks were skipped. Details: {analysis.parse_error}")
+        return
+    if not analysis.findings:
+        st.success("No rule-based issues found. That does not mean the query is fast; check its plan.")
+        return
+    for finding in analysis.findings:
+        with st.container(border=True):
+            st.markdown(f"**{finding.severity.upper()}** · {finding.rule}")
+            st.code(finding.snippet, language="sql")
+            st.markdown(f"**Why:** {finding.reason}")
+            st.markdown(f"**Suggested rewrite:** {finding.suggestion}")
+
+
+def render_suggestions(result):
+    st.markdown(f"**{SUGGESTIONS_LABEL}**")
+    st.markdown(result.text or "(no suggestions returned)")
+    with st.expander("Exactly what was sent"):
+        if result.schema_sent:
+            st.code(result.schema_sent, language="text")
+        st.code(result.query_sent, language="sql")
+        if result.plan_sent:
+            st.code(result.plan_sent, language="text")
+
+
+def run_write_sql_tab(entries, dialect):
+    question = st.text_area("Your question", key="schema_question", height=100, max_chars=300)
+    if st.button("Write SQL", type="primary", key="ask") and question.strip():
+        call_schema_model("schema_last", lambda llm: (write_sql(question, entries, dialect, llm), dialect))
+    if st.session_state.get("schema_last"):
+        render_schema_answer(*st.session_state["schema_last"])
+
+
+def run_optimizer_tab(entries, dialect):
+    st.warning(OPTIMIZER_WARNING)
+    query = st.text_area("SQL query to optimize", key="opt_query", height=200, max_chars=MAX_QUERY_CHARS)
+    plan = st.text_area(
+        f"EXPLAIN PLAN output (optional, up to {MAX_PLAN_CHARS:,} characters)",
+        key="opt_plan",
+        height=160,
+        max_chars=MAX_PLAN_CHARS,
+    )
+    rules_col, model_col = st.columns([1, 1])
+    with rules_col:
+        if st.button("Check with rules (no model call)", key="opt_rules") and query.strip():
+            try:
+                st.session_state["opt_findings"] = analyze(query, DIALECTS[dialect])
+            except ValueError as error:
+                st.session_state.pop("opt_findings", None)
+                st.error(str(error))
+    with model_col:
+        if st.button("Ask Gemini for suggestions", key="opt_model") and query.strip():
+            call_schema_model("opt_suggestions", lambda llm: suggest(query, dialect, llm, schemas=entries, plan=plan))
+    if st.session_state.get("opt_findings"):
+        st.subheader("Rule-based findings")
+        render_findings(st.session_state["opt_findings"])
+    if st.session_state.get("opt_suggestions"):
+        st.subheader("Model suggestions")
+        render_suggestions(st.session_state["opt_suggestions"])
+
+
 def run_schema_mode():
     st.warning(PRIVACY_WARNING)
     st.caption("This mode never connects to or runs anything on your database. Copy the SQL and run it yourself.")
     dialect = st.selectbox("SQL dialect", list(DIALECTS), key="schema_dialect")
-    schema_paste = st.text_area(
-        "Your schema: CREATE TABLE statements, or one table per line such as orders: order_id, customer_id, total",
-        key="schema_paste",
-        height=240,
-        max_chars=MAX_SCHEMA_CHARS,
-    )
-    question = st.text_area("Your question", key="schema_question", height=100, max_chars=300)
-    if st.button("Write SQL", type="primary", key="ask") and question.strip():
-        live_calls = st.session_state.get("live_calls", 0)
-        if live_calls >= MAX_LIVE_CALLS:
-            st.warning("This session reached its live-call limit.")
-            return
-        st.session_state.pop("schema_last", None)
-        try:
-            llm = get_schema_llm()
-        except LLMError as error:
-            st.error(f"Schema mode uses Google's Gemini API. {error}")
-            return
-        try:
-            with st.spinner("Writing SQL..."):
-                st.session_state["schema_last"] = (write_sql(question, schema_paste, dialect, llm), dialect)
-            st.session_state["live_calls"] = live_calls + 1
-        except ValueError as error:
-            st.error(str(error))
-        except Exception as error:
-            st.session_state["live_calls"] = live_calls + 1
-            if is_quota_error(str(error)):
-                st.warning("Free-tier limit reached. Please try again later.")
-            else:
-                st.error(f"The language model could not be reached just now ({type(error).__name__}). Please try again.")
-    if st.session_state.get("schema_last"):
-        render_schema_answer(*st.session_state["schema_last"])
+    entries = schema_inputs()
+    write_tab, optimizer_tab = st.tabs(["Write SQL", "Query optimizer"])
+    with write_tab:
+        run_write_sql_tab(entries, dialect)
+    with optimizer_tab:
+        run_optimizer_tab(entries, dialect)
 
 
 inject_css()

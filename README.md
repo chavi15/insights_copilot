@@ -54,7 +54,16 @@ The first ChromaDB run downloads a small embedding model, so it needs internet. 
 
 ## Schema-only assistant
 
-Pick **Schema-only assistant** in the sidebar to get SQL for your own database without connecting to it. Paste `CREATE TABLE` statements or lines such as `orders: order_id, customer_id, total` (up to 20,000 characters), choose Oracle, PostgreSQL, MySQL or DuckDB, and ask a question. Only table and column names are extracted and sent to Google's Gemini API; types, defaults, comments and constraints are dropped. This mode always uses Gemini (`GEMINI_API_KEY`, optional `GEMINI_MODEL`), skips the disk cache and query log, and never runs the SQL. The SQL is sanity-checked with the guardrails (SELECT only, blocked keywords and functions) using the chosen sqlglot dialect; if sqlglot cannot parse it, the SQL is shown with a warning.
+Pick **Schema-only assistant** in the sidebar to work with your own database without connecting to it. Nothing is ever run, logged or cached in this mode, and it always uses Gemini (`GEMINI_API_KEY`, optional `GEMINI_MODEL`).
+
+**Schemas.** Add up to 5 named schemas (for example `HR` and `SALES`), each with its own box. Paste `CREATE TABLE` statements or lines such as `orders: order_id, customer_id, total`. The 20,000 character limit applies to all boxes together. Only table and column names are extracted; types, defaults, comments and constraints are dropped. Named schemas are sent as `SCHEMA.table`, so `HR.employees` and `SALES.employees` stay separate; a qualifier already in the DDL is replaced by the box name. Schema names must be unique, ignoring case. A single box may be left unnamed, which sends unqualified table names.
+
+**Write SQL tab.** Choose Oracle, PostgreSQL, MySQL or DuckDB and ask a question. The prompt says "Write SQL for <dialect>". The answer is sanity-checked as text only (one SELECT, no blocked keywords or functions, schema-qualified tables allowed) with sqlglot in that dialect. If sqlglot cannot parse it, the SQL is still shown, with a warning.
+
+**Query optimizer tab.** Paste a query (up to 20,000 characters) and, optionally, EXPLAIN PLAN output (up to 10,000 characters).
+
+- *Check with rules* runs locally with sqlglot and makes no model call. It flags `SELECT *`, functions on columns in `WHERE`, leading-wildcard `LIKE`, joins without a condition, `NOT IN` with a subquery, correlated subqueries (not `EXISTS`), `DISTINCT` with joins, `ORDER BY` in a subquery without `LIMIT`/`FETCH` (Oracle `ROWNUM` top-N is allowed), and visible implicit conversions (a column compared with a quoted number or a date-like string). Each finding has a severity, a reason and a suggested rewrite.
+- *Ask Gemini for suggestions* sends the query with string literals replaced by `?` and comments removed, the table and column names from the schema boxes, and the plan text with quoted values replaced by `?`. The output is labelled "Unverified suggestions: compare plans on your own database before using."
 
 ## Data model
 
